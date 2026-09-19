@@ -66,19 +66,13 @@
             </label>
           </div>
 
-          <div class="row-2" data-mode="signup" data-for="grader">
-            <label class="field">
-              <span>Position</span>
-              <select id="f-position">
-                <option value="master">Master of Initiation</option>
-                <option value="senior">Senior Member</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Access code</span>
-              <input id="f-code" type="password" autocomplete="off" placeholder="From your officers">
-            </label>
-          </div>
+          <label class="field" data-mode="signup" data-for="grader">
+            <span>Position</span>
+            <select id="f-position">
+              <option value="master">Master of Initiation</option>
+              <option value="senior">Senior Member</option>
+            </select>
+          </label>
         </div>
 
         <div id="auth-error" class="form-error" role="alert" hidden></div>
@@ -112,6 +106,23 @@
       </div>
     </header>
     <main id="main" class="wrap"></main>
+  </div>
+
+  <!-- ===== Password gate for the Master / Senior Member tab ===== -->
+  <div id="gate" class="overlay" hidden>
+    <form id="gate-form" class="dialog gate" role="dialog" aria-modal="true" aria-labelledby="gate-title" novalidate>
+      <h2 id="gate-title">Master of Initiation / Senior Member</h2>
+      <p>Enter the password to open the Master of Initiation / Senior Member tab.</p>
+      <label class="field">
+        <span>Password</span>
+        <input id="gate-input" type="password" inputmode="numeric" autocomplete="off">
+      </label>
+      <div id="gate-error" class="form-error" role="alert" hidden></div>
+      <div class="actions">
+        <button class="btn" id="gate-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" type="submit">Unlock</button>
+      </div>
+    </form>
   </div>
 
   <div id="modal-root"></div>
