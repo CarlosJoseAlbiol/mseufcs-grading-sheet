@@ -21,7 +21,12 @@ const CRITERIA = [
   { key: "stage",         label: "Stage Presence",    subs: ["Confidence", "Expression"],                 points: [10, 8, 6, 4, 2] },
   { key: "lyrics",        label: "Mastery of Lyrics", subs: ["No error or lapses in memory"],             points: [10, 8, 6, 4, 2] }
 ];
-const VOICE = { S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" };
+const VOICE_OPTIONS = {
+  S1: "Soprano 1", S2: "Soprano 2", A1: "Alto 1", A2: "Alto 2",
+  T1: "Tenor 1", T2: "Tenor 2", B1: "Bass 1", B2: "Bass 2", G: "Generalized"
+};
+// Older accounts may still carry a single-letter voice part.
+const VOICE = { ...VOICE_OPTIONS, S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" };
 const ROLE = { trainee: "Trainee", master: "Master of Initiation", senior: "Senior Member" };
 const REACTIONS = ["Noted", "Thank you", "Will improve", "Motivated"];
 const isGrader = (r) => r === "master" || r === "senior";
@@ -34,7 +39,7 @@ const main = $("#main");
 const modalRoot = $("#modal-root");
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const voiceName = (v) => (VOICE[v] ? `${VOICE[v]} (${v})` : "Not set");
+const voiceName = (v) => VOICE[v] || "Not set";
 const ms = (t) => (t && t.toMillis ? t.toMillis() : Date.now());
 const byNewest = (a, b) => (b.date || "").localeCompare(a.date || "") || ms(b.createdAt) - ms(a.createdAt);
 const todayStr = () => {
@@ -426,12 +431,12 @@ function renderGraderDashboard() {
       <input id="q" type="search" placeholder="Search by trainee name" aria-label="Search by trainee name" value="${esc(state.filter.q)}">
       <select id="vf" aria-label="Filter by voice part">
         <option value="">All voice parts</option>
-        ${Object.keys(VOICE).map((k) => `<option value="${k}" ${state.filter.voice === k ? "selected" : ""}>${VOICE[k]} (${k})</option>`).join("")}
+        ${Object.entries(VOICE_OPTIONS).map(([k, label]) => `<option value="${k}" ${state.filter.voice === k ? "selected" : ""}>${label}</option>`).join("")}
       </select>
     </div>
     <div class="panel"><div class="table-wrap">
       <table class="list">
-        <thead><tr><th>Trainee</th><th>Applying for</th><th>Date</th><th>Total</th><th>Adjudicator</th></tr></thead>
+        <thead><tr><th>Trainee</th><th>Voice part</th><th>Date</th><th>Total</th><th>Adjudicator</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div></div>`;
@@ -485,7 +490,7 @@ function renderTraineeDashboard() {
           <button class="card-a" type="button" data-id="${a.id}">
             <div class="big">${a.total}<small>/100</small></div>
             <div><strong>${esc(fmtDate(a.date))}</strong></div>
-            <div class="meta">Applying for ${esc(voiceName(a.voicePart))}<br>Rated by ${esc(a.graderName)} (${esc(ROLE[a.graderRole] || "")})</div>
+            <div class="meta">${esc(voiceName(a.voicePart))}<br>Rated by ${esc(a.graderName)} (${esc(ROLE[a.graderRole] || "")})</div>
           </button>`).join("")}</div>`
         : `<div class="panel"><div class="empty"><p>No rating sheets yet.</p><p class="hint">When a Master of Initiation or Senior Member rates your audition, it will show up here.</p></div></div>`
     }`;
@@ -518,10 +523,6 @@ function renderForm(existing = null) {
           ${!existing && !state.trainees.length ? '<span class="hint">No trainees yet. Trainees must create an account first.</span>' : ""}
         </label>
         <label class="field"><span>Program and year level</span><input id="s-program" type="text"></label>
-        <label class="field">
-          <span>Applying for</span>
-          <select id="s-voice">${Object.keys(VOICE).map((k) => `<option value="${k}">${VOICE[k]} (${k})</option>`).join("")}</select>
-        </label>
         <label class="field"><span>Date</span><input id="s-date" type="date"></label>
       </div>
       ${rubricHTML({ scores: existing ? existing.scores : {}, mode: "edit" })}
@@ -537,7 +538,6 @@ function renderForm(existing = null) {
   if (existing) {
     $("#s-trainee").innerHTML = `<option>${esc(existing.traineeName)}</option>`;
     $("#s-program").value = existing.program || "";
-    $("#s-voice").value = existing.voicePart || "S";
     $("#s-comment").value = existing.comment || "";
   }
   window.scrollTo(0, 0);
@@ -564,7 +564,7 @@ async function saveSheet() {
     traineeUid,
     traineeName: ex ? ex.traineeName : trainee ? trainee.name : "Unknown",
     program: $("#s-program").value.trim(),
-    voicePart: $("#s-voice").value,
+    voicePart: ex ? ex.voicePart || "" : (trainee && trainee.voicePart) || "",
     date,
     scores,
     total,
@@ -614,7 +614,7 @@ function openDetail(id) {
         <div class="dialog-head">
           <div>
             <h2 id="dlg-title">${esc(a.traineeName)}</h2>
-            <div class="meta"><span>Applying for ${esc(voiceName(a.voicePart))}</span><span>${esc(a.program)}</span><span>${esc(fmtDate(a.date))}</span></div>
+            <div class="meta"><span>${esc(voiceName(a.voicePart))}</span><span>${esc(a.program)}</span><span>${esc(fmtDate(a.date))}</span></div>
           </div>
           <div class="total-box"><div class="big">${a.total}</div><small>out of 100</small></div>
         </div>
@@ -766,7 +766,6 @@ main.addEventListener("change", (e) => {
     const tr = state.trainees.find((x) => x.id === t.value);
     if (tr) {
       $("#s-program").value = tr.program || "";
-      if (tr.voicePart) $("#s-voice").value = tr.voicePart;
     }
   }
 });
