@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MSEUF Concert Singers | Audition Rating</title>
+  <meta name="description" content="Student audition rating sheets for the MSEUF Concert Singers.">
+  <link rel="icon" href="assets/logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ===== Loading ===== -->
+  <div id="boot" class="loading">Loading…</div>
+
+  <!-- ===== Sign in / Create account ===== -->
+  <main id="auth-view" class="auth" hidden>
+    <section class="auth-hero">
+      <img src="assets/logo.jpg" alt="MSEUF Concert Singers logo">
+      <h1>Audition Rating</h1>
+      <div class="staff" aria-hidden="true"></div>
+      <p>Trainees see how they were rated. Masters of Initiation and Senior Members do the rating.</p>
+    </section>
+
+    <section class="auth-panel">
+      <form id="auth-form" class="auth-card" novalidate>
+        <h2 id="auth-title">Sign in</h2>
+
+        <div class="seg" role="group" aria-label="Account type">
+          <button type="button" data-group="trainee" aria-pressed="true">Trainee</button>
+          <button type="button" data-group="grader" aria-pressed="false">Master / Senior Member</button>
+        </div>
+
+        <div class="form-grid">
+          <label class="field" data-mode="signup">
+            <span>Full name</span>
+            <input id="f-name" type="text" autocomplete="name" placeholder="Juan Dela Cruz">
+          </label>
+
+          <label class="field">
+            <span>Email</span>
+            <input id="f-email" type="email" autocomplete="email" placeholder="you@example.com">
+          </label>
+
+          <label class="field">
+            <span>Password</span>
+            <input id="f-pass" type="password" autocomplete="current-password" placeholder="At least 6 characters">
+          </label>
+
+          <div class="row-2" data-mode="signup" data-for="trainee">
+            <label class="field">
+              <span>Program and year level</span>
+              <input id="f-program" type="text" placeholder="BSIT - 2nd Year">
+            </label>
+            <label class="field">
+              <span>Applying for</span>
+              <select id="f-voice">
+                <option value="S">Soprano (S)</option>
+                <option value="A">Alto (A)</option>
+                <option value="T">Tenor (T)</option>
+                <option value="B">Bass (B)</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row-2" data-mode="signup" data-for="grader">
+            <label class="field">
+              <span>Position</span>
+              <select id="f-position">
+                <option value="master">Master of Initiation</option>
+                <option value="senior">Senior Member</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Access code</span>
+              <input id="f-code" type="password" autocomplete="off" placeholder="From your officers">
+            </label>
+          </div>
+        </div>
+
+        <div id="auth-error" class="form-error" role="alert" hidden></div>
+
+        <button id="auth-submit" class="btn btn-primary" type="submit">Sign in</button>
+
+        <div class="auth-foot">
+          <span><span id="swap-text">New here?</span> <button id="swap-mode" class="btn-link" type="button">Create an account</button></span>
+          <button id="forgot" class="btn-link" type="button" data-mode="signin">Forgot password?</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <!-- ===== Signed-in app ===== -->
+  <div id="app-view" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <img src="assets/logo.jpg" alt="">
+        <div>
+          <strong>MSEUF Concert Singers</strong>
+          <small>Student Audition Rating Sheet</small>
+        </div>
+      </div>
+      <div class="who">
+        <div class="who-text">
+          <div class="name" id="who-name"></div>
+          <div class="role" id="who-role"></div>
+        </div>
+        <button id="logout" class="btn btn-sm" type="button">Sign out</button>
+      </div>
+    </header>
+    <main id="main" class="wrap"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

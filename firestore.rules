@@ -1,0 +1,81 @@
+rules_version = '2';
+
+// MSEUF Concert Singers | Audition Rating
+// Paste this into Firebase Console > Firestore Database > Rules, then Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function isGrader() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc().data.role in ['master', 'senior'];
+    }
+    function assessment(id) { return get(/databases/$(database)/documents/assessments/$(id)).data; }
+    function canSee(id) { return isGrader() || assessment(id).traineeUid == request.auth.uid; }
+
+    // Holds the access code for Masters of Initiation / Senior Members.
+    // Nobody can read it from the app; the rules below only compare against it.
+    match /config/{docId} {
+      allow read, write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isGrader());
+
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'program', 'voicePart', 'inviteCode', 'createdAt'])
+        && (
+          request.resource.data.role == 'trainee'
+          || (
+            request.resource.data.role in ['master', 'senior']
+            && request.resource.data.inviteCode == get(/databases/$(database)/documents/config/invite).data.code
+          )
+        );
+
+      // Nobody can change their own role.
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role;
+
+      allow delete: if false;
+    }
+
+    match /assessments/{id} {
+      // Trainees only see their own sheets. Masters / Senior Members see all.
+      allow read: if signedIn() && (isGrader() || resource.data.traineeUid == request.auth.uid);
+
+      allow create: if isGrader()
+        && request.resource.data.graderUid == request.auth.uid
+        && request.resource.data.total is int
+        && request.resource.data.total >= 0
+        && request.resource.data.total <= 100;
+
+      allow update: if isGrader()
+        && resource.data.graderUid == request.auth.uid
+        && request.resource.data.graderUid == request.auth.uid
+        && request.resource.data.traineeUid == resource.data.traineeUid;
+
+      allow delete: if isGrader() && resource.data.graderUid == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow read: if signedIn() && canSee(id);
+        allow create: if signedIn() && canSee(id)
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 1000;
+        allow delete: if signedIn()
+          && (resource.data.authorUid == request.auth.uid || assessment(id).graderUid == request.auth.uid);
+      }
+
+      match /reactions/{reactionId} {
+        allow read: if signedIn() && canSee(id);
+        allow create, update: if signedIn() && reactionId == request.auth.uid && canSee(id)
+          && request.resource.data.label in ['Noted', 'Thank you', 'Will improve', 'Motivated'];
+        allow delete: if signedIn()
+          && (reactionId == request.auth.uid || assessment(id).graderUid == request.auth.uid);
+      }
+    }
+  }
+}
