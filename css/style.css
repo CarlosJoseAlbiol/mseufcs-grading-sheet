@@ -227,6 +227,10 @@ table.rubric tfoot td { font-family: var(--display); font-size: 1.9rem; font-wei
 .sheet-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.9rem; }
 .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: flex-end; }
 
+/* ---------- Password gate ---------- */
+.dialog.gate { width: min(420px, 100%); }
+.dialog.gate p { color: var(--muted); }
+
 /* ---------- Detail dialog ---------- */
 .overlay {
   position: fixed; inset: 0; z-index: 50; background: rgba(20, 0, 0, 0.8);
