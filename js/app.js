@@ -84,6 +84,13 @@ let authGroup = "trainee";
 let authMode = "signin";
 let modalUnsubs = [];
 
+/* Password gate for the Master / Senior Member tab.
+   The same password is sent as the sign-up access code, so set the
+   "code" field of config/invite in Firestore to this value. */
+const GATE_CODE = "1974";
+let unlockedCode = "";
+try { if (sessionStorage.getItem("gateCode") === GATE_CODE) unlockedCode = GATE_CODE; } catch (_) { /* ignore */ }
+
 /* =========================================================
    Auth screen
    ========================================================= */
@@ -123,7 +130,7 @@ const MESSAGES = {
   "auth/api-key-not-valid.-please-pass-a-valid-api-key.": "Firebase is not set up yet. Add your config to js/firebase-config.js.",
   "need-name": "Enter your full name.",
   "need-program": "Enter your program and year level.",
-  "need-code": "Enter the access code from your officers.",
+  "need-code": "Unlock the Master / Senior Member tab with the password first.",
   "bad-code": "That access code is not valid. Ask your officers for the current code.",
   "no-profile": "This account has no profile. Create an account first.",
   "wrong-group-grader": "This account is a Trainee account. Switch to Trainee above.",
@@ -162,9 +169,8 @@ async function doSignUp(email, pass) {
     if (!program) throw new Error("need-program");
     extra = { role: "trainee", program, voicePart: $("#f-voice").value };
   } else {
-    const code = $("#f-code").value.trim();
-    if (!code) throw new Error("need-code");
-    extra = { role: $("#f-position").value, inviteCode: code };
+    if (!unlockedCode) throw new Error("need-code");
+    extra = { role: $("#f-position").value, inviteCode: unlockedCode };
   }
   const cred = await createUserWithEmailAndPassword(auth, email, pass);
   try {
@@ -202,11 +208,41 @@ $("#auth-form").addEventListener("submit", async (e) => {
 
 document.querySelectorAll(".seg button").forEach((b) =>
   b.addEventListener("click", () => {
+    if (b.dataset.group === "grader" && !unlockedCode) return openGate();
     authGroup = b.dataset.group;
     showAuthError("");
     syncAuthUI();
   })
 );
+
+/* ----- password gate ----- */
+const gate = $("#gate");
+function gateError(msg) {
+  const el = $("#gate-error");
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+function openGate() {
+  $("#gate-input").value = "";
+  gateError("");
+  gate.hidden = false;
+  $("#gate-input").focus();
+}
+function closeGate() { gate.hidden = true; }
+$("#gate-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const value = $("#gate-input").value.trim();
+  if (value !== GATE_CODE) return gateError("Wrong password. Ask your officers for the password.");
+  unlockedCode = value;
+  try { sessionStorage.setItem("gateCode", value); } catch (_) { /* ignore */ }
+  closeGate();
+  authGroup = "grader";
+  showAuthError("");
+  syncAuthUI();
+});
+$("#gate-cancel").addEventListener("click", closeGate);
+gate.addEventListener("mousedown", (e) => { if (e.target === gate) closeGate(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !gate.hidden) closeGate(); });
 $("#swap-mode").addEventListener("click", () => {
   authMode = authMode === "signin" ? "signup" : "signin";
   showAuthError("");
