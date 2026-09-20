@@ -121,6 +121,7 @@ function syncAuthUI() {
     el.hidden = !(m && g);
   });
   document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.group === authGroup)));
+  $("#acct-type").textContent = authGroup === "grader" ? "Master of Initiation / Senior Member account" : "Trainee account";
 }
 
 const MESSAGES = {
