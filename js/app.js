@@ -40,6 +40,8 @@ const modalRoot = $("#modal-root");
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const voiceName = (v) => VOICE[v] || "Not set";
+const isGroup = (a) => !a.traineeUid;
+const sheetTitle = (a) => a.traineeName || (a.voicePart === "G" ? "Generalized (whole choir)" : `${voiceName(a.voicePart)} section`);
 const ms = (t) => (t && t.toMillis ? t.toMillis() : Date.now());
 const byNewest = (a, b) => (b.date || "").localeCompare(a.date || "") || ms(b.createdAt) - ms(a.createdAt);
 const todayStr = () => {
@@ -301,19 +303,26 @@ function enterApp(user, profile) {
   $("#who-role").textContent = ROLE[profile.role] || "";
 
   const grader = isGrader(profile.role);
-  const aQuery = grader
-    ? collection(db, "assessments")
-    : query(collection(db, "assessments"), where("traineeUid", "==", user.uid));
-  state.unsubs.push(
-    onSnapshot(
-      aQuery,
-      (snap) => {
-        state.assessments = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byNewest);
-        if (state.view === "dashboard") render();
-      },
-      (err) => { console.error(err); toast("Could not load rating sheets. Check your Firestore rules."); }
-    )
-  );
+  const col = collection(db, "assessments");
+  const listenErr = (err) => { console.error(err); toast("Could not load rating sheets. Check your Firestore rules."); };
+  const publish = (sources) => {
+    const seen = new Map();
+    Object.values(sources).forEach((list) => list.forEach((a) => seen.set(a.id, a)));
+    state.assessments = [...seen.values()].sort(byNewest);
+    if (state.view === "dashboard") render();
+  };
+  const mapDocs = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (grader) {
+    state.unsubs.push(onSnapshot(col, (snap) => publish({ all: mapDocs(snap) }), listenErr));
+  } else {
+    // Trainees see: their own sheets, sheets for their section, and whole-choir sheets.
+    const sources = { mine: [], section: [], choir: [] };
+    state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", user.uid)), (snap) => { sources.mine = mapDocs(snap); publish(sources); }, listenErr));
+    if (profile.voicePart) {
+      state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", ""), where("voicePart", "==", profile.voicePart)), (snap) => { sources.section = mapDocs(snap); publish(sources); }, listenErr));
+    }
+    state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", ""), where("voicePart", "==", "G")), (snap) => { sources.choir = mapDocs(snap); publish(sources); }, listenErr));
+  }
   if (grader) {
     state.unsubs.push(
       onSnapshot(query(collection(db, "users"), where("role", "==", "trainee")), (snap) => {
@@ -410,7 +419,7 @@ function render() {
 function renderGraderDashboard() {
   const all = state.assessments;
   const avg = all.length ? (all.reduce((s, a) => s + a.total, 0) / all.length).toFixed(1) : "–";
-  const graded = new Set(all.map((a) => a.traineeUid)).size;
+  const graded = new Set(all.filter((a) => a.traineeUid).map((a) => a.traineeUid)).size;
   const mine = all.filter((a) => a.graderUid === state.user.uid).length;
   main.innerHTML = `
     <div class="page-head">
@@ -428,7 +437,7 @@ function renderGraderDashboard() {
       <div class="stat"><div class="num">${mine}</div><div class="lbl">Sheets by you</div></div>
     </div>
     <div class="toolbar">
-      <input id="q" type="search" placeholder="Search by trainee name" aria-label="Search by trainee name" value="${esc(state.filter.q)}">
+      <input id="q" type="search" placeholder="Search by trainee or section" aria-label="Search by trainee or section" value="${esc(state.filter.q)}">
       <select id="vf" aria-label="Filter by voice part">
         <option value="">All voice parts</option>
         ${Object.entries(VOICE_OPTIONS).map(([k, label]) => `<option value="${k}" ${state.filter.voice === k ? "selected" : ""}>${label}</option>`).join("")}
@@ -446,7 +455,7 @@ function renderGraderDashboard() {
 function renderRows() {
   const { q, voice } = state.filter;
   const rows = state.assessments.filter(
-    (a) => (!voice || a.voicePart === voice) && (!q || (a.traineeName || "").toLowerCase().includes(q.toLowerCase()))
+    (a) => (!voice || a.voicePart === voice) && (!q || sheetTitle(a).toLowerCase().includes(q.toLowerCase()))
   );
   const body = $("#rows");
   if (!rows.length) {
@@ -459,7 +468,7 @@ function renderRows() {
   }
   body.innerHTML = rows.map((a) => `
     <tr data-id="${a.id}" tabindex="0">
-      <td><strong>${esc(a.traineeName)}</strong><div class="hint">${esc(a.program)}</div></td>
+      <td><strong>${esc(sheetTitle(a))}</strong><div class="hint">${isGroup(a) ? "Group assessment" : esc(a.program)}</div></td>
       <td><span class="tag">${esc(voiceName(a.voicePart))}</span></td>
       <td>${esc(fmtDate(a.date))}</td>
       <td><span class="score-pill">${a.total}<small>/100</small></span></td>
@@ -475,7 +484,7 @@ function renderTraineeDashboard() {
     <div class="page-head">
       <div>
         <h2>Hello, ${esc(state.profile.name.split(" ")[0])}</h2>
-        <p>Your audition ratings. Open a sheet to read the comments and reply.</p>
+        <p>Your ratings, including those for your section. Open a sheet to read the comments and reply.</p>
       </div>
     </div>
     <div class="staff" aria-hidden="true"></div>
@@ -490,9 +499,9 @@ function renderTraineeDashboard() {
           <button class="card-a" type="button" data-id="${a.id}">
             <div class="big">${a.total}<small>/100</small></div>
             <div><strong>${esc(fmtDate(a.date))}</strong></div>
-            <div class="meta">${esc(voiceName(a.voicePart))}<br>Rated by ${esc(a.graderName)} (${esc(ROLE[a.graderRole] || "")})</div>
+            <div class="meta">${isGroup(a) ? `Group: ${esc(sheetTitle(a))}` : esc(voiceName(a.voicePart))}<br>Rated by ${esc(a.graderName)} (${esc(ROLE[a.graderRole] || "")})</div>
           </button>`).join("")}</div>`
-        : `<div class="panel"><div class="empty"><p>No rating sheets yet.</p><p class="hint">When a Master of Initiation or Senior Member rates your audition, it will show up here.</p></div></div>`
+        : `<div class="panel"><div class="empty"><p>No rating sheets yet.</p><p class="hint">When a Master of Initiation or Senior Member rates you or your section, it will show up here.</p></div></div>`
     }`;
 }
 
@@ -507,7 +516,7 @@ function renderForm(existing = null) {
     <div class="page-head">
       <div>
         <h2>${existing ? "Edit rating sheet" : "New rating sheet"}</h2>
-        <p>Pick one rating per criterion. Points and total are calculated for you.</p>
+        <p>Grade a whole section, one trainee, or both. Points and total are calculated for you.</p>
       </div>
       <button class="btn" id="cancel-form" type="button">Back to dashboard</button>
     </div>
@@ -515,14 +524,22 @@ function renderForm(existing = null) {
     <form id="sheet" class="sheet" novalidate>
       <div class="sheet-head">
         <label class="field">
-          <span>Trainee</span>
+          <span>Section / group</span>
+          <select id="s-section">
+            <option value="">No section</option>
+            ${Object.entries(VOICE_OPTIONS).map(([k, label]) => `<option value="${k}">${label}</option>`).join("")}
+          </select>
+          <span class="hint">Pick a section to grade the whole group.</span>
+        </label>
+        <label class="field">
+          <span>Trainee (optional)</span>
           <select id="s-trainee" ${existing ? "disabled" : ""}>
-            <option value="">Select a trainee</option>
+            <option value="">No specific trainee (group)</option>
             ${state.trainees.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}
           </select>
-          ${!existing && !state.trainees.length ? '<span class="hint">No trainees yet. Trainees must create an account first.</span>' : ""}
+          <span class="hint">${!existing && !state.trainees.length ? "No trainees have signed up yet." : "Pick a trainee to grade one person."}</span>
         </label>
-        <label class="field"><span>Program and year level</span><input id="s-program" type="text"></label>
+        <label class="field"><span>Program and year level (optional)</span><input id="s-program" type="text"></label>
         <label class="field"><span>Date</span><input id="s-date" type="date"></label>
       </div>
       ${rubricHTML({ scores: existing ? existing.scores : {}, mode: "edit" })}
@@ -536,7 +553,8 @@ function renderForm(existing = null) {
     </form>`;
   $("#s-date").value = existing ? existing.date : todayStr();
   if (existing) {
-    $("#s-trainee").innerHTML = `<option>${esc(existing.traineeName)}</option>`;
+    $("#s-trainee").innerHTML = `<option>${esc(existing.traineeName || "None (group sheet)")}</option>`;
+    $("#s-section").value = existing.voicePart || "";
     $("#s-program").value = existing.program || "";
     $("#s-comment").value = existing.comment || "";
   }
@@ -554,7 +572,8 @@ async function saveSheet() {
   formError("");
   const ex = state.editing;
   const traineeUid = ex ? ex.traineeUid : $("#s-trainee").value;
-  if (!traineeUid) return formError("Select a trainee.");
+  const section = $("#s-section").value;
+  if (!traineeUid && !section) return formError("Select a section, a trainee, or both.");
   const { scores, total, complete } = readScores();
   if (!complete) return formError("Rate every criterion before saving.");
   const date = $("#s-date").value;
@@ -562,9 +581,9 @@ async function saveSheet() {
   const trainee = state.trainees.find((t) => t.id === traineeUid);
   const data = {
     traineeUid,
-    traineeName: ex ? ex.traineeName : trainee ? trainee.name : "Unknown",
+    traineeName: ex ? ex.traineeName || "" : trainee ? trainee.name : "",
     program: $("#s-program").value.trim(),
-    voicePart: ex ? ex.voicePart || "" : (trainee && trainee.voicePart) || "",
+    voicePart: section || (ex && ex.voicePart) || (trainee && trainee.voicePart) || "",
     date,
     scores,
     total,
@@ -613,8 +632,8 @@ function openDetail(id) {
       <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title" tabindex="-1">
         <div class="dialog-head">
           <div>
-            <h2 id="dlg-title">${esc(a.traineeName)}</h2>
-            <div class="meta"><span>${esc(voiceName(a.voicePart))}</span><span>${esc(a.program)}</span><span>${esc(fmtDate(a.date))}</span></div>
+            <h2 id="dlg-title">${esc(sheetTitle(a))}</h2>
+            <div class="meta">${isGroup(a) ? "<span>Group assessment</span>" : `<span>${esc(voiceName(a.voicePart))}</span>${a.program ? `<span>${esc(a.program)}</span>` : ""}`}<span>${esc(fmtDate(a.date))}</span></div>
           </div>
           <div class="total-box"><div class="big">${a.total}</div><small>out of 100</small></div>
         </div>
@@ -729,7 +748,7 @@ function openDetail(id) {
   if (mine) {
     $("#edit-sheet").addEventListener("click", () => { closeModal(); renderForm(a); });
     $("#delete-sheet").addEventListener("click", async () => {
-      if (!confirm(`Delete the rating sheet for ${a.traineeName}? This cannot be undone.`)) return;
+      if (!confirm(`Delete the rating sheet for ${sheetTitle(a)}? This cannot be undone.`)) return;
       try {
         const [cs, rs] = await Promise.all([getDocs(commentsCol), getDocs(reactionsCol)]);
         await Promise.all([...cs.docs, ...rs.docs].map((d) => deleteDoc(d.ref)));
@@ -766,6 +785,7 @@ main.addEventListener("change", (e) => {
     const tr = state.trainees.find((x) => x.id === t.value);
     if (tr) {
       $("#s-program").value = tr.program || "";
+      if (VOICE_OPTIONS[tr.voicePart]) $("#s-section").value = tr.voicePart;
     }
   }
 });
