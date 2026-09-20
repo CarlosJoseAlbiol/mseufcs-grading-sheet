@@ -40,9 +40,18 @@ const modalRoot = $("#modal-root");
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const voiceName = (v) => VOICE[v] || "Not set";
-const isGroup = (a) => !a.traineeUid;
+// A sheet can cover one trainee, several trainees, or a whole section (no trainees).
+const uidsOf = (a) => a.traineeUids || (a.traineeUid ? [a.traineeUid] : []);
+const namesOf = (a) => a.traineeNames || (a.traineeName ? [a.traineeName] : []);
+const isGroup = (a) => uidsOf(a).length === 0;
 const adjLabel = (a) => a.adjudicator || `${a.graderName} (${ROLE[a.graderRole] || ""})`;
-const sheetTitle = (a) => a.traineeName || (a.voicePart === "G" ? "Generalized (whole choir)" : `${voiceName(a.voicePart)} section`);
+const sheetTitle = (a) => {
+  const n = namesOf(a);
+  if (n.length === 1) return n[0];
+  if (n.length === 2) return `${n[0]} & ${n[1]}`;
+  if (n.length > 2) return `${n[0]}, ${n[1]} +${n.length - 2} more`;
+  return a.voicePart === "G" ? "Generalized (whole choir)" : `${voiceName(a.voicePart)} section`;
+};
 const ms = (t) => (t && t.toMillis ? t.toMillis() : Date.now());
 const byNewest = (a, b) => (b.date || "").localeCompare(a.date || "") || ms(b.createdAt) - ms(a.createdAt);
 const todayStr = () => {
@@ -112,6 +121,7 @@ const state = {
   unsubs: [],
   view: "dashboard",
   editing: null,
+  selected: new Set(),
   filter: { q: "", voice: "" }
 };
 let busy = false;
@@ -382,8 +392,9 @@ function enterApp(user, profile) {
     state.unsubs.push(onSnapshot(col, (snap) => publish({ all: mapDocs(snap) }), listenErr));
   } else {
     // Trainees see: their own sheets, sheets for their section, and whole-choir sheets.
-    const sources = { mine: [], section: [], choir: [] };
+    const sources = { mine: [], multi: [], section: [], choir: [] };
     state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", user.uid)), (snap) => { sources.mine = mapDocs(snap); publish(sources); }, listenErr));
+    state.unsubs.push(onSnapshot(query(col, where("traineeUids", "array-contains", user.uid)), (snap) => { sources.multi = mapDocs(snap); publish(sources); }, listenErr));
     if (profile.voicePart) {
       state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", ""), where("voicePart", "==", profile.voicePart)), (snap) => { sources.section = mapDocs(snap); publish(sources); }, listenErr));
     }
@@ -549,7 +560,7 @@ function render() {
 function renderGraderDashboard() {
   const all = state.assessments;
   const avg = all.length ? (all.reduce((s, a) => s + a.total, 0) / all.length).toFixed(1) : "–";
-  const graded = new Set(all.filter((a) => a.traineeUid).map((a) => a.traineeUid)).size;
+  const graded = new Set(all.flatMap(uidsOf)).size;
   const mine = all.filter((a) => a.graderUid === state.user.uid).length;
   main.innerHTML = `
     <div class="page-head">
@@ -585,7 +596,7 @@ function renderGraderDashboard() {
 function renderRows() {
   const { q, voice } = state.filter;
   const rows = state.assessments.filter(
-    (a) => (!voice || a.voicePart === voice) && (!q || sheetTitle(a).toLowerCase().includes(q.toLowerCase()))
+    (a) => (!voice || a.voicePart === voice) && (!q || `${sheetTitle(a)} ${namesOf(a).join(" ")}`.toLowerCase().includes(q.toLowerCase()))
   );
   const body = $("#rows");
   if (!rows.length) {
@@ -598,7 +609,7 @@ function renderRows() {
   }
   body.innerHTML = rows.map((a) => `
     <tr data-id="${a.id}" tabindex="0">
-      <td><strong>${esc(sheetTitle(a))}</strong><div class="hint">${isGroup(a) ? "Group assessment" : esc(a.program)}</div></td>
+      <td><strong>${esc(sheetTitle(a))}</strong><div class="hint">${isGroup(a) ? "Group assessment" : namesOf(a).length > 1 ? `${namesOf(a).length} trainees` : esc(a.program)}</div></td>
       <td><span class="tag">${esc(voiceName(a.voicePart))}</span></td>
       <td>${esc(fmtDate(a.date))}</td>
       <td><span class="score-pill">${a.total}<small>/100</small></span></td>
@@ -641,6 +652,7 @@ function renderTraineeDashboard() {
 function renderForm(existing = null) {
   state.view = "form";
   state.editing = existing;
+  state.selected = new Set();
   const p = state.profile;
   main.innerHTML = `
     <div class="page-head">
@@ -661,14 +673,32 @@ function renderForm(existing = null) {
           </select>
           <span class="hint">Pick a section to grade the whole group.</span>
         </label>
-        <label class="field">
-          <span>Trainee (optional)</span>
-          <select id="s-trainee" ${existing ? "disabled" : ""}>
-            <option value="">No specific trainee (group)</option>
-            ${state.trainees.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}
-          </select>
-          <span class="hint">${!existing && !state.trainees.length ? "No trainees have signed up yet." : "Pick a trainee to grade one person."}</span>
-        </label>
+        ${
+          existing
+            ? `<div class="field picker"><span>Trainees</span><div class="picker-box static"><div class="picker-chips">${
+                namesOf(existing).length
+                  ? namesOf(existing).map((n) => `<span class="pchip">${esc(n)}</span>`).join("")
+                  : '<span class="picker-placeholder">None (group sheet)</span>'
+              }</div></div></div>`
+            : `<div class="field picker" id="trainee-picker">
+          <span>Trainees (optional)</span>
+          <div class="picker-wrap">
+            <div class="picker-box" id="picker-box" tabindex="0" role="button" aria-haspopup="listbox" aria-expanded="false">
+              <div class="picker-chips" id="picker-chips"></div>
+              <span class="picker-caret" aria-hidden="true">&#9662;</span>
+            </div>
+            <div class="picker-panel" id="picker-panel" hidden>
+              <input id="picker-search" type="search" placeholder="Search trainees" aria-label="Search trainees" autocomplete="off">
+              <div class="picker-list" id="picker-list" role="listbox" aria-multiselectable="true"></div>
+              <div class="picker-actions">
+                <button class="btn-link" id="picker-section" type="button" hidden></button>
+                <button class="btn-link" id="picker-clear" type="button">Clear</button>
+              </div>
+            </div>
+          </div>
+          <span class="hint">Pick one or more trainees to grade them on the same sheet.</span>
+        </div>`
+        }
         <label class="field"><span>Program and year level (optional)</span><input id="s-program" type="text"></label>
         <label class="field"><span>Date</span><input id="s-date" type="date"></label>
       </div>
@@ -683,14 +713,61 @@ function renderForm(existing = null) {
     </form>`;
   $("#s-date").value = existing ? existing.date : todayStr();
   if (existing) {
-    $("#s-trainee").innerHTML = `<option>${esc(existing.traineeName || "None (group sheet)")}</option>`;
     $("#s-section").value = existing.voicePart || "";
     $("#s-program").value = existing.program || "";
     $("#s-comment").value = existing.comment || "";
   }
+  paintPicker();
   animateMain();
   window.scrollTo(0, 0);
 }
+
+/* ----- multi-select trainee picker ----- */
+function paintPicker() {
+  const chipsEl = $("#picker-chips");
+  if (!chipsEl) return;
+  const chosen = state.trainees.filter((t) => state.selected.has(t.id));
+  chipsEl.innerHTML = chosen.length
+    ? chosen.map((t) => `<span class="pchip">${esc(t.name)}<button class="pchip-x" type="button" data-remove="${t.id}" aria-label="Remove ${esc(t.name)}">&times;</button></span>`).join("")
+    : '<span class="picker-placeholder">No specific trainee (group)</span>';
+  const q = ($("#picker-search").value || "").trim().toLowerCase();
+  const list = state.trainees.filter((t) => !q || (t.name || "").toLowerCase().includes(q));
+  $("#picker-list").innerHTML = list.length
+    ? list.map((t) => `<label class="pick"><input type="checkbox" data-tr="${t.id}" ${state.selected.has(t.id) ? "checked" : ""}><span>${esc(t.name)}</span><small>${esc(VOICE[t.voicePart] || "")}</small></label>`).join("")
+    : `<p class="hint pad">${state.trainees.length ? "No trainee matches your search." : "No trainees have signed up yet."}</p>`;
+  const sec = $("#s-section").value;
+  const secBtn = $("#picker-section");
+  secBtn.hidden = !sec || sec === "G";
+  if (!secBtn.hidden) secBtn.textContent = `Select all in ${VOICE_OPTIONS[sec]}`;
+}
+
+function togglePicker(open) {
+  const panel = $("#picker-panel");
+  if (!panel) return;
+  const show = open === undefined ? panel.hidden : open;
+  panel.hidden = !show;
+  $("#picker-box").setAttribute("aria-expanded", String(show));
+  if (show) { paintPicker(); $("#picker-search").focus(); }
+}
+
+function pickerChanged() {
+  paintPicker();
+  const chosen = state.trainees.filter((t) => state.selected.has(t.id));
+  if (chosen.length === 1) {
+    $("#s-program").value = chosen[0].program || "";
+    if (VOICE_OPTIONS[chosen[0].voicePart]) $("#s-section").value = chosen[0].voicePart;
+  } else if (chosen.length > 1) {
+    const parts = new Set(chosen.map((t) => t.voicePart));
+    const only = [...parts][0];
+    if (parts.size === 1 && VOICE_OPTIONS[only] && !$("#s-section").value) $("#s-section").value = only;
+  }
+  paintPicker();
+}
+
+document.addEventListener("click", (e) => {
+  const panel = $("#picker-panel");
+  if (panel && !panel.hidden && !e.target.closest("#trainee-picker")) togglePicker(false);
+});
 
 function formError(msg) {
   const el = $("#form-error");
@@ -702,19 +779,17 @@ function formError(msg) {
 async function saveSheet() {
   formError("");
   const ex = state.editing;
-  const traineeUid = ex ? ex.traineeUid : $("#s-trainee").value;
+  const uids = ex ? uidsOf(ex) : [...state.selected];
   const section = $("#s-section").value;
-  if (!traineeUid && !section) return formError("Select a section, a trainee, or both.");
+  if (!uids.length && !section) return formError("Select a section, one or more trainees, or both.");
   const { scores, total, complete } = readScores();
   if (!complete) return formError("Rate every criterion before saving.");
   const date = $("#s-date").value;
   if (!date) return formError("Enter the audition date.");
-  const trainee = state.trainees.find((t) => t.id === traineeUid);
+  const chosen = uids.map((id) => state.trainees.find((t) => t.id === id)).filter(Boolean);
   const data = {
-    traineeUid,
-    traineeName: ex ? ex.traineeName || "" : trainee ? trainee.name : "",
     program: $("#s-program").value.trim(),
-    voicePart: section || (ex && ex.voicePart) || (trainee && trainee.voicePart) || "",
+    voicePart: section || (ex && ex.voicePart) || (chosen[0] && chosen[0].voicePart) || "",
     date,
     scores,
     total,
@@ -725,11 +800,18 @@ async function saveSheet() {
     graderRole: state.profile.role,
     updatedAt: serverTimestamp()
   };
+  // Who the sheet is about is fixed when it is created. Editing never changes it.
+  const who = ex ? {} : {
+    traineeUid: uids[0] || "",
+    traineeName: chosen.map((t) => t.name).join(", "),
+    traineeUids: uids,
+    traineeNames: chosen.map((t) => t.name)
+  };
   const btn = main.querySelector('#sheet button[type="submit"]');
   btn.disabled = true;
   try {
     if (ex) await updateDoc(doc(db, "assessments", ex.id), data);
-    else await addDoc(collection(db, "assessments"), { ...data, createdAt: serverTimestamp() });
+    else await addDoc(collection(db, "assessments"), { ...data, ...who, createdAt: serverTimestamp() });
     goto(showDashboard);
     toast("Rating sheet saved");
   } catch (err) {
@@ -767,6 +849,7 @@ function openDetail(id) {
           <div>
             <h2 id="dlg-title">${esc(sheetTitle(a))}</h2>
             <div class="meta">${isGroup(a) ? "<span>Group assessment</span>" : `<span>${esc(voiceName(a.voicePart))}</span>${a.program ? `<span>${esc(a.program)}</span>` : ""}`}<span>${esc(fmtDate(a.date))}</span></div>
+            ${namesOf(a).length > 1 ? `<p class="hint" style="margin-top:.4rem">Rated together: ${esc(namesOf(a).join(", "))}</p>` : ""}
           </div>
           <div class="total-box"><div class="big">${a.total}</div><small>out of 100</small></div>
         </div>
@@ -897,30 +980,40 @@ function openDetail(id) {
    Main-area events (delegated, since the content is re-rendered)
    ========================================================= */
 main.addEventListener("click", (e) => {
+  const rm = e.target.closest("[data-remove]");
+  if (rm) { state.selected.delete(rm.dataset.remove); return pickerChanged(); }
+  if (e.target.closest("#picker-clear")) { state.selected.clear(); return pickerChanged(); }
+  if (e.target.closest("#picker-section")) {
+    const sec = $("#s-section").value;
+    state.trainees.filter((t) => t.voicePart === sec).forEach((t) => state.selected.add(t.id));
+    return pickerChanged();
+  }
+  if (e.target.closest("#picker-box")) return togglePicker();
   if (e.target.closest("#new-sheet")) return goto(() => renderForm());
   if (e.target.closest("#cancel-form, #cancel2")) return goto(showDashboard);
   const row = e.target.closest("[data-id]");
   if (row) openDetail(row.dataset.id);
 });
 main.addEventListener("keydown", (e) => {
+  if (e.target.id === "picker-box" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); return togglePicker(); }
+  if (e.key === "Escape" && e.target.closest("#picker-panel")) { togglePicker(false); return $("#picker-box").focus(); }
   if (e.key !== "Enter") return;
   const row = e.target.closest("tr[data-id]");
   if (row) openDetail(row.dataset.id);
 });
 main.addEventListener("input", (e) => {
+  if (e.target.id === "picker-search") return paintPicker();
   if (e.target.id === "q") { state.filter.q = e.target.value.trim(); renderRows(); }
 });
 main.addEventListener("change", (e) => {
   const t = e.target;
   if (t.id === "vf") { state.filter.voice = t.value; renderRows(); }
   else if (t.name && t.name.startsWith("crit-")) updateTotals();
-  else if (t.id === "s-trainee") {
-    const tr = state.trainees.find((x) => x.id === t.value);
-    if (tr) {
-      $("#s-program").value = tr.program || "";
-      if (VOICE_OPTIONS[tr.voicePart]) $("#s-section").value = tr.voicePart;
-    }
-  }
+  else if (t.dataset.tr) {
+    if (t.checked) state.selected.add(t.dataset.tr);
+    else state.selected.delete(t.dataset.tr);
+    pickerChanged();
+  } else if (t.id === "s-section") paintPicker();
 });
 main.addEventListener("submit", (e) => {
   if (e.target.id === "sheet") { e.preventDefault(); saveSheet(); }
