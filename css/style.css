@@ -232,7 +232,8 @@ table.rubric tfoot td { font-family: var(--display); font-size: 1.9rem; font-wei
 
 /* ---------- Assessment form ---------- */
 .sheet { display: grid; gap: 1.25rem; }
-.sheet-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.9rem; }
+.sheet-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.9rem; align-items: start; }
+@media (min-width: 1000px) { .sheet-head { grid-template-columns: 1fr 1.2fr 1fr 0.85fr; } }
 .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ---------- Password gate ---------- */
@@ -355,6 +356,8 @@ table.list tbody tr { transition: background 0.2s; }
 
 /* ---------- Multi-select trainee picker ---------- */
 .picker { position: relative; }
+.picker > span:first-child { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.3rem; color: var(--gold-200); }
+label.field > span.hint, .picker > span.hint { display: block; font-weight: 400; font-size: 0.82rem; color: var(--muted); margin: 0.35rem 0 0; }
 .picker-wrap { position: relative; }
 .picker-box {
   display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 46px;
@@ -381,7 +384,7 @@ table.list tbody tr { transition: background 0.2s; }
 }
 .pchip-x:hover { background: rgba(36, 0, 0, 0.35); }
 .picker-panel {
-  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30;
+  position: absolute; left: 0; width: max(100%, min(340px, 86vw)); top: calc(100% + 6px); z-index: 30;
   background: var(--ox-900); border: 1px solid var(--gold-500); border-radius: 10px; padding: 0.6rem;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55); display: grid; gap: 0.5rem;
   animation: rise 0.28s var(--ease) both;
@@ -394,7 +397,6 @@ table.list tbody tr { transition: background 0.2s; }
 .pick small { color: var(--muted); }
 .picker-actions { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.9rem; }
 .pad { padding: 0.6rem; }
-@media (min-width: 900px) { .sheet-head .picker { grid-column: span 2; } }
 
 /* ---------- Smooth switching ---------- */
 .auth-card { will-change: height; }
