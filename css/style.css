@@ -290,6 +290,64 @@ table.rubric tfoot td { font-family: var(--display); font-size: 1.9rem; font-wei
   .dialog-head { flex-direction: column; }
   .total-box { text-align: left; }
 }
+/* ---------- Big clef watermark (taken from the logo) ---------- */
+.clef-bg {
+  position: fixed; right: -5vw; bottom: -4vh; width: min(56vw, 660px);
+  z-index: 0; pointer-events: none; opacity: 0.17;
+  animation: clefFloat 10s ease-in-out infinite;
+}
+.clef-bg img { display: block; width: 100%; height: auto; filter: drop-shadow(0 0 46px rgba(219, 150, 0, 0.4)); }
+#app-view .wrap { position: relative; z-index: 1; }
+@keyframes clefFloat {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-22px) rotate(1deg); }
+}
+
+/* ---------- Motion ---------- */
+@keyframes rise { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes drawline { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); opacity: 0.9; } }
+@keyframes dropin { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: none; } }
+@keyframes pop { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); } }
+@keyframes toastin { from { opacity: 0; transform: translate(-50%, 14px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes glow { 0%, 100% { box-shadow: 0 0 0 8px rgba(219, 150, 0, 0.12), 0 20px 50px rgba(0, 0, 0, 0.5); }
+                  50% { box-shadow: 0 0 0 14px rgba(219, 150, 0, 0.2), 0 20px 60px rgba(0, 0, 0, 0.5); } }
+
+/* page enter (added by JS whenever the dashboard or form changes) */
+.wrap.enter > * { animation: rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 80ms); }
+.wrap.enter > .staff { transform-origin: left center; animation: drawline 1s ease-out both; animation-delay: calc(var(--i, 0) * 80ms); }
+.wrap.enter .stat, .wrap.enter .card-a { animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(220ms + var(--j, 0) * 90ms); }
+.wrap.enter #rows tr { animation: fade 0.45s ease both; animation-delay: calc(420ms + var(--r, 0) * 45ms); }
+
+/* app shell and login */
+#app-view:not([hidden]) .topbar { animation: dropin 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.auth-hero > * { animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.auth-hero > :nth-child(2) { animation-delay: 0.1s; }
+.auth-hero > :nth-child(3) { animation-name: drawline; animation-delay: 0.25s; animation-duration: 1s; transform-origin: center; }
+.auth-hero > :nth-child(4) { animation-delay: 0.35s; }
+.auth-hero img { animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both, glow 5s ease-in-out 1s infinite; }
+.auth-card { animation: rise 0.7s 0.15s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.form-grid > *:not([hidden]), .auth-card .form-error:not([hidden]) { animation: fade 0.35s ease both; }
+.seg button { transition: background 0.25s, color 0.25s; }
+
+/* hover and press feedback */
+.stat, .card-a, .chip { transition: transform 0.2s, border-color 0.2s, background 0.2s; }
+.stat:hover { transform: translateY(-3px); border-color: var(--gold-300); }
+.card-a:hover { transform: translateY(-4px); }
+.btn { transition: background 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s; }
+.btn-primary:hover { box-shadow: 0 6px 22px rgba(219, 150, 0, 0.4); transform: translateY(-1px); }
+table.list tbody tr { transition: background 0.2s; }
+.cell { transition: background 0.15s, color 0.15s; }
+.cell:has(input:checked) span { animation: bump 0.3s ease; }
+#rubric-total.bump { animation: bump 0.35s ease; }
+.overlay { animation: fade 0.2s ease both; }
+.toast { animation: toastin 0.3s ease both; }
+.msg { animation: rise 0.35s ease both; }
+
+@media (max-width: 860px) {
+  .clef-bg { width: 90vw; right: -20vw; opacity: 0.12; }
+}
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
