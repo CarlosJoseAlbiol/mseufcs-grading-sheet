@@ -57,6 +57,33 @@ const fmtDate = (s) => {
 const fmtStamp = (t) =>
   t && t.toDate ? t.toDate().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Just now";
 
+const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Runs change() and animates the element's height from old to new, so nothing jumps.
+function morph(el, change) {
+  if (reduceMotion) return change();
+  const h0 = el.offsetHeight;
+  change();
+  const h1 = el.offsetHeight;
+  if (Math.abs(h0 - h1) < 2) return;
+  el.style.height = h0 + "px";
+  el.style.overflow = "hidden";
+  el.getBoundingClientRect();
+  el.style.transition = "height 0.5s cubic-bezier(0.22, 0.8, 0.24, 1)";
+  el.style.height = h1 + "px";
+  let finished = false;
+  const done = () => {
+    if (finished) return;
+    finished = true;
+    el.style.height = "";
+    el.style.overflow = "";
+    el.style.transition = "";
+  };
+  el.addEventListener("transitionend", (e) => { if (e.propertyName === "height") done(); });
+  setTimeout(done, 650);
+}
+
 let toastTimer;
 function toast(msg) {
   const t = $("#toast");
@@ -104,8 +131,25 @@ try { if (sessionStorage.getItem("gateCode") === GATE_CODE) unlockedCode = GATE_
    ========================================================= */
 function showAuthError(msg) {
   const el = $("#auth-error");
-  el.textContent = msg;
-  el.hidden = !msg;
+  const apply = () => { el.textContent = msg; el.hidden = !msg; };
+  if (msg && el.hidden && !$("#auth-view").hidden) morph($("#auth-form"), apply);
+  else apply();
+}
+
+// Fades the card contents out, swaps them, glides the card to its new height, then fades back in.
+let authBusy = false;
+async function transitionAuth(change) {
+  if (reduceMotion) return change();
+  if (authBusy) return;
+  authBusy = true;
+  const card = $("#auth-form");
+  card.classList.add("swap-out");
+  await wait(170);
+  morph(card, change);
+  await wait(30);
+  card.classList.remove("swap-out");
+  await wait(450);
+  authBusy = false;
 }
 
 function syncAuthUI() {
@@ -121,6 +165,7 @@ function syncAuthUI() {
     el.hidden = !(m && g);
   });
   document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.group === authGroup)));
+  $(".seg").dataset.active = authGroup;
   $("#acct-type").textContent = authGroup === "grader" ? "Master of Initiation / Senior Member account" : "Trainee account";
 }
 
@@ -218,9 +263,12 @@ $("#auth-form").addEventListener("submit", async (e) => {
 document.querySelectorAll(".seg button").forEach((b) =>
   b.addEventListener("click", () => {
     if (b.dataset.group === "grader" && !unlockedCode) return openGate();
-    authGroup = b.dataset.group;
-    showAuthError("");
-    syncAuthUI();
+    if (b.dataset.group === authGroup) return;
+    transitionAuth(() => {
+      authGroup = b.dataset.group;
+      showAuthError("");
+      syncAuthUI();
+    });
   })
 );
 
@@ -237,7 +285,12 @@ function openGate() {
   gate.hidden = false;
   $("#gate-input").focus();
 }
-function closeGate() { gate.hidden = true; }
+function closeGate() {
+  if (gate.hidden || gate.classList.contains("closing")) return;
+  if (reduceMotion) { gate.hidden = true; return; }
+  gate.classList.add("closing");
+  setTimeout(() => { gate.hidden = true; gate.classList.remove("closing"); }, 220);
+}
 $("#gate-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const value = $("#gate-input").value.trim();
@@ -245,17 +298,21 @@ $("#gate-form").addEventListener("submit", (e) => {
   unlockedCode = value;
   try { sessionStorage.setItem("gateCode", value); } catch (_) { /* ignore */ }
   closeGate();
-  authGroup = "grader";
-  showAuthError("");
-  syncAuthUI();
+  transitionAuth(() => {
+    authGroup = "grader";
+    showAuthError("");
+    syncAuthUI();
+  });
 });
 $("#gate-cancel").addEventListener("click", closeGate);
 gate.addEventListener("mousedown", (e) => { if (e.target === gate) closeGate(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !gate.hidden) closeGate(); });
 $("#swap-mode").addEventListener("click", () => {
-  authMode = authMode === "signin" ? "signup" : "signin";
-  showAuthError("");
-  syncAuthUI();
+  transitionAuth(() => {
+    authMode = authMode === "signin" ? "signup" : "signin";
+    showAuthError("");
+    syncAuthUI();
+  });
 });
 $("#forgot").addEventListener("click", async () => {
   const email = $("#f-email").value.trim();
@@ -283,7 +340,7 @@ function showAuth() {
 function teardown() {
   state.unsubs.forEach((u) => u());
   state.unsubs = [];
-  closeModal();
+  closeModal(true);
 }
 
 function leaveApp() {
@@ -299,8 +356,15 @@ function enterApp(user, profile) {
   state.profile = profile;
   state.view = "dashboard";
   $("#boot").hidden = true;
-  $("#auth-view").hidden = true;
-  $("#app-view").hidden = false;
+  const av = $("#auth-view");
+  const showShell = () => {
+    av.hidden = true;
+    av.classList.remove("out");
+    $("#app-view").hidden = false;
+    render();
+    animateMain();
+    window.scrollTo(0, 0);
+  };
   $("#who-name").textContent = profile.name;
   $("#who-role").textContent = ROLE[profile.role] || "";
 
@@ -332,9 +396,12 @@ function enterApp(user, profile) {
       })
     );
   }
-  render();
-  animateMain();
-  window.scrollTo(0, 0);
+  if (!av.hidden && !reduceMotion) {
+    av.classList.add("out");
+    setTimeout(showShell, 320);
+  } else {
+    showShell();
+  }
 }
 
 if (!configured) {
@@ -417,7 +484,6 @@ function updateTotals() {
 /* =========================================================
    Motion
    ========================================================= */
-const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let enterTimer;
 
 function countUp() {
@@ -449,6 +515,18 @@ function animateMain() {
   clearTimeout(enterTimer);
   enterTimer = setTimeout(() => main.classList.remove("enter"), 1900);
   countUp();
+}
+
+let navBusy = false;
+async function goto(fn) {
+  if (reduceMotion) return fn();
+  if (navBusy) return;
+  navBusy = true;
+  main.classList.add("leaving");
+  await wait(190);
+  fn();
+  main.classList.remove("leaving");
+  navBusy = false;
 }
 
 function showDashboard() {
@@ -652,7 +730,7 @@ async function saveSheet() {
   try {
     if (ex) await updateDoc(doc(db, "assessments", ex.id), data);
     else await addDoc(collection(db, "assessments"), { ...data, createdAt: serverTimestamp() });
-    showDashboard();
+    goto(showDashboard);
     toast("Rating sheet saved");
   } catch (err) {
     console.error(err);
@@ -664,18 +742,21 @@ async function saveSheet() {
 /* =========================================================
    Detail dialog: read-only sheet, reactions, comments
    ========================================================= */
-function closeModal() {
+function closeModal(immediate = false) {
   modalUnsubs.forEach((u) => u());
   modalUnsubs = [];
-  modalRoot.innerHTML = "";
   document.removeEventListener("keydown", onEsc);
+  const ov = $("#ov");
+  if (!ov || immediate || reduceMotion) { modalRoot.innerHTML = ""; return; }
+  ov.classList.add("closing");
+  setTimeout(() => { if (ov.isConnected && ov.classList.contains("closing")) ov.remove(); }, 230);
 }
 function onEsc(e) { if (e.key === "Escape") closeModal(); }
 
 function openDetail(id) {
   const a = state.assessments.find((x) => x.id === id);
   if (!a) return;
-  closeModal();
+  closeModal(true);
   const uid = state.user.uid;
   const mine = a.graderUid === uid;
 
@@ -798,7 +879,7 @@ function openDetail(id) {
   });
 
   if (mine) {
-    $("#edit-sheet").addEventListener("click", () => { closeModal(); renderForm(a); });
+    $("#edit-sheet").addEventListener("click", () => { closeModal(); goto(() => renderForm(a)); });
     $("#delete-sheet").addEventListener("click", async () => {
       if (!confirm(`Delete the rating sheet for ${sheetTitle(a)}? This cannot be undone.`)) return;
       try {
@@ -816,8 +897,8 @@ function openDetail(id) {
    Main-area events (delegated, since the content is re-rendered)
    ========================================================= */
 main.addEventListener("click", (e) => {
-  if (e.target.closest("#new-sheet")) return renderForm();
-  if (e.target.closest("#cancel-form, #cancel2")) return showDashboard();
+  if (e.target.closest("#new-sheet")) return goto(() => renderForm());
+  if (e.target.closest("#cancel-form, #cancel2")) return goto(showDashboard);
   const row = e.target.closest("[data-id]");
   if (row) openDetail(row.dataset.id);
 });
