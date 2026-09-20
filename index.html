@@ -20,7 +20,7 @@
   <main id="auth-view" class="auth" hidden>
     <section class="auth-hero">
       <img src="assets/logo.jpg" alt="MSEUF Concert Singers logo">
-      <h1>Audition Rating</h1>
+      <h1>Assessment Grading Sheet</h1>
       <div class="staff" aria-hidden="true"></div>
       <p>Welcome to the MSEUF Concert Singers grading sheet. Sign in to view or record assessment ratings.</p>
     </section>
@@ -29,7 +29,9 @@
       <form id="auth-form" class="auth-card" novalidate>
         <h2 id="auth-title">Sign in</h2>
 
-        <div class="seg" role="group" aria-label="Account type">
+        <div data-mode="signup"><span class="tag" id="acct-type"></span></div>
+
+        <div class="seg" role="group" aria-label="Account type" data-mode="signin">
           <button type="button" data-group="trainee" aria-pressed="true">Trainee</button>
           <button type="button" data-group="grader" aria-pressed="false">Master / Senior Member</button>
         </div>
@@ -53,7 +55,7 @@
           <div class="row-2" data-mode="signup" data-for="trainee">
             <label class="field">
               <span>Program and year level</span>
-              <input id="f-program" type="text" placeholder="BSIT - 2nd Year">
+              <input id="f-program" type="text" placeholder="BSAB - 1st Year">
             </label>
             <label class="field">
               <span>Voice part</span>
@@ -100,7 +102,7 @@
         <img src="assets/logo.jpg" alt="">
         <div>
           <strong>MSEUF Concert Singers</strong>
-          <small>Student Assessment Rating Sheet</small>
+          <small>Trainee Assessment Rating Sheet</small>
         </div>
       </div>
       <div class="who">
