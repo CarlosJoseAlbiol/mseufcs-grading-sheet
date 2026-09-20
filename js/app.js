@@ -44,6 +44,12 @@ const voiceName = (v) => VOICE[v] || "Not set";
 const uidsOf = (a) => a.traineeUids || (a.traineeUid ? [a.traineeUid] : []);
 const namesOf = (a) => a.traineeNames || (a.traineeName ? [a.traineeName] : []);
 const isGroup = (a) => uidsOf(a).length === 0;
+// A sheet is either graded (rubric + total) or comments only (no scores recorded yet).
+const isGraded = (a) => (a.type || "graded") === "graded" && typeof a.total === "number";
+const avgOf = (list) => {
+  const g = list.filter(isGraded);
+  return g.length ? (g.reduce((sum, a) => sum + a.total, 0) / g.length).toFixed(1) : "–";
+};
 const adjLabel = (a) => a.adjudicator || `${a.graderName} (${ROLE[a.graderRole] || ""})`;
 const sheetTitle = (a) => {
   const n = namesOf(a);
@@ -122,7 +128,8 @@ const state = {
   view: "dashboard",
   editing: null,
   selected: new Set(),
-  filter: { q: "", voice: "" }
+  mode: "graded",
+  filter: { q: "", voice: "", type: "" }
 };
 let busy = false;
 let authGroup = "trainee";
@@ -559,7 +566,7 @@ function render() {
 
 function renderGraderDashboard() {
   const all = state.assessments;
-  const avg = all.length ? (all.reduce((s, a) => s + a.total, 0) / all.length).toFixed(1) : "–";
+  const avg = avgOf(all);
   const graded = new Set(all.flatMap(uidsOf)).size;
   const mine = all.filter((a) => a.graderUid === state.user.uid).length;
   main.innerHTML = `
@@ -583,10 +590,15 @@ function renderGraderDashboard() {
         <option value="">All voice parts</option>
         ${Object.entries(VOICE_OPTIONS).map(([k, label]) => `<option value="${k}" ${state.filter.voice === k ? "selected" : ""}>${label}</option>`).join("")}
       </select>
+      <select id="tf" aria-label="Filter by sheet type">
+        <option value="">All sheets</option>
+        <option value="graded" ${state.filter.type === "graded" ? "selected" : ""}>Graded</option>
+        <option value="comments" ${state.filter.type === "comments" ? "selected" : ""}>Comments only</option>
+      </select>
     </div>
     <div class="panel"><div class="table-wrap">
       <table class="list">
-        <thead><tr><th>Trainee</th><th>Voice part</th><th>Date</th><th>Total</th><th>Adjudicator</th></tr></thead>
+        <thead><tr><th>Trainee</th><th>Voice part</th><th>Date</th><th>Score</th><th>Adjudicator</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div></div>`;
@@ -594,9 +606,9 @@ function renderGraderDashboard() {
 }
 
 function renderRows() {
-  const { q, voice } = state.filter;
+  const { q, voice, type } = state.filter;
   const rows = state.assessments.filter(
-    (a) => (!voice || a.voicePart === voice) && (!q || `${sheetTitle(a)} ${namesOf(a).join(" ")}`.toLowerCase().includes(q.toLowerCase()))
+    (a) => (!voice || a.voicePart === voice) && (!type || (a.type || "graded") === type) && (!q || `${sheetTitle(a)} ${namesOf(a).join(" ")}`.toLowerCase().includes(q.toLowerCase()))
   );
   const body = $("#rows");
   if (!rows.length) {
@@ -612,15 +624,16 @@ function renderRows() {
       <td><strong>${esc(sheetTitle(a))}</strong><div class="hint">${isGroup(a) ? "Group assessment" : namesOf(a).length > 1 ? `${namesOf(a).length} trainees` : esc(a.program)}</div></td>
       <td><span class="tag">${esc(voiceName(a.voicePart))}</span></td>
       <td>${esc(fmtDate(a.date))}</td>
-      <td><span class="score-pill">${a.total}<small>/100</small></span></td>
+      <td>${isGraded(a) ? `<span class="score-pill">${a.total}<small>/100</small></span>` : '<span class="tag">Comments only</span>'}</td>
       <td>${esc(a.adjudicator || a.graderName)}<div class="hint">${a.adjudicator ? `Recorded by ${esc(a.graderName)}` : esc(ROLE[a.graderRole] || "")}</div></td>
     </tr>`).join("");
 }
 
 function renderTraineeDashboard() {
   const all = state.assessments;
-  const avg = all.length ? (all.reduce((s, a) => s + a.total, 0) / all.length).toFixed(1) : "–";
-  const latest = all.length ? all[0].total : "–";
+  const avg = avgOf(all);
+  const latestGraded = all.find(isGraded);
+  const latest = latestGraded ? latestGraded.total : "–";
   main.innerHTML = `
     <div class="page-head">
       <div>
@@ -638,7 +651,7 @@ function renderTraineeDashboard() {
       all.length
         ? `<div class="cards">${all.map((a) => `
           <button class="card-a" type="button" data-id="${a.id}">
-            <div class="big">${a.total}<small>/100</small></div>
+            ${isGraded(a) ? `<div class="big">${a.total}<small>/100</small></div>` : '<div class="big big-text">Comments only</div>'}
             <div><strong>${esc(fmtDate(a.date))}</strong></div>
             <div class="meta">${isGroup(a) ? `Group: ${esc(sheetTitle(a))}` : esc(voiceName(a.voicePart))}<br>Rated by ${esc(adjLabel(a))}</div>
           </button>`).join("")}</div>`
@@ -658,12 +671,19 @@ function renderForm(existing = null) {
     <div class="page-head">
       <div>
         <h2>${existing ? "Edit rating sheet" : "New rating sheet"}</h2>
-        <p>Grade a whole section, one trainee, or both. Points and total are calculated for you.</p>
+        <p>Grade or comment on a whole section, one or more trainees, or both.</p>
       </div>
       <button class="btn" id="cancel-form" type="button">Back to dashboard</button>
     </div>
     <div class="staff" aria-hidden="true"></div>
     <form id="sheet" class="sheet" novalidate>
+      <div>
+        <div class="seg mode" id="mode-seg" data-active="graded" role="group" aria-label="Sheet type">
+          <button type="button" data-sheetmode="graded" aria-pressed="true">Graded</button>
+          <button type="button" data-sheetmode="comments" aria-pressed="false">Comments only</button>
+        </div>
+        <p class="hint" id="mode-hint" style="margin-top:.5rem"></p>
+      </div>
       <div class="sheet-head">
         <label class="field">
           <span>Section / group</span>
@@ -702,8 +722,8 @@ function renderForm(existing = null) {
         <label class="field"><span>Program and year level (optional)</span><input id="s-program" type="text"></label>
         <label class="field"><span>Date</span><input id="s-date" type="date"></label>
       </div>
-      ${rubricHTML({ scores: existing ? existing.scores : {}, mode: "edit" })}
-      <label class="field"><span>Comment</span><textarea id="s-comment" maxlength="2000" placeholder="Strengths, what to work on, next steps"></textarea></label>
+      <div class="collapse" id="rubric-block"><div class="collapse-inner">${rubricHTML({ scores: existing ? existing.scores || {} : {}, mode: "edit" })}</div></div>
+      <label class="field"><span id="comment-label">Comment</span><textarea id="s-comment" maxlength="2000" placeholder="Strengths, what to work on, next steps"></textarea></label>
       <label class="field"><span>Adjudicator</span><input id="s-adj" type="text" maxlength="120" value="${esc(existing ? adjLabel(existing) : `${p.name} (${ROLE[p.role]})`)}"></label>
       <div id="form-error" class="form-error" role="alert" hidden></div>
       <div class="actions">
@@ -718,8 +738,26 @@ function renderForm(existing = null) {
     $("#s-comment").value = existing.comment || "";
   }
   paintPicker();
+  applyMode(existing ? existing.type || "graded" : "graded", true);
   animateMain();
   window.scrollTo(0, 0);
+}
+
+function applyMode(mode, instant = false) {
+  state.mode = mode;
+  const closed = mode === "comments";
+  $("#mode-seg").dataset.active = mode;
+  document.querySelectorAll("#mode-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.sheetmode === mode)));
+  const block = $("#rubric-block");
+  if (instant) block.style.transition = "none";
+  block.classList.toggle("closed", closed);
+  block.querySelector(".collapse-inner").inert = closed;
+  if (instant) { block.getBoundingClientRect(); block.style.transition = ""; }
+  $("#comment-label").textContent = closed ? "Comments" : "Comment";
+  $("#s-comment").placeholder = closed ? "Write your comments on this trainee or section" : "Strengths, what to work on, next steps";
+  $("#mode-hint").textContent = closed
+    ? "Comments only. No scores are recorded on this sheet yet."
+    : "Graded. Rate each criterion below and the total is calculated for you.";
 }
 
 /* ----- multi-select trainee picker ----- */
@@ -782,8 +820,17 @@ async function saveSheet() {
   const uids = ex ? uidsOf(ex) : [...state.selected];
   const section = $("#s-section").value;
   if (!uids.length && !section) return formError("Select a section, one or more trainees, or both.");
-  const { scores, total, complete } = readScores();
-  if (!complete) return formError("Rate every criterion before saving.");
+  const mode = state.mode;
+  let scores = {};
+  let total = null;
+  if (mode === "graded") {
+    const r = readScores();
+    if (!r.complete) return formError("Rate every criterion before saving, or switch to Comments only.");
+    scores = r.scores;
+    total = r.total;
+  } else if (!$("#s-comment").value.trim()) {
+    return formError("Write your comments before saving.");
+  }
   const date = $("#s-date").value;
   if (!date) return formError("Enter the audition date.");
   const chosen = uids.map((id) => state.trainees.find((t) => t.id === id)).filter(Boolean);
@@ -791,6 +838,7 @@ async function saveSheet() {
     program: $("#s-program").value.trim(),
     voicePart: section || (ex && ex.voicePart) || (chosen[0] && chosen[0].voicePart) || "",
     date,
+    type: mode,
     scores,
     total,
     comment: $("#s-comment").value.trim(),
@@ -851,10 +899,10 @@ function openDetail(id) {
             <div class="meta">${isGroup(a) ? "<span>Group assessment</span>" : `<span>${esc(voiceName(a.voicePart))}</span>${a.program ? `<span>${esc(a.program)}</span>` : ""}`}<span>${esc(fmtDate(a.date))}</span></div>
             ${namesOf(a).length > 1 ? `<p class="hint" style="margin-top:.4rem">Rated together: ${esc(namesOf(a).join(", "))}</p>` : ""}
           </div>
-          <div class="total-box"><div class="big">${a.total}</div><small>out of 100</small></div>
+          ${isGraded(a) ? `<div class="total-box"><div class="big">${a.total}</div><small>out of 100</small></div>` : '<div class="total-box"><div class="big big-text">Comments only</div></div>'}
         </div>
 
-        ${rubricHTML({ scores: a.scores, mode: "view" })}
+        ${isGraded(a) ? rubricHTML({ scores: a.scores, mode: "view" }) : ""}
 
         <div>
           <div class="section-title">Adjudicator's comment</div>
@@ -980,6 +1028,8 @@ function openDetail(id) {
    Main-area events (delegated, since the content is re-rendered)
    ========================================================= */
 main.addEventListener("click", (e) => {
+  const sm = e.target.closest("[data-sheetmode]");
+  if (sm) return applyMode(sm.dataset.sheetmode);
   const rm = e.target.closest("[data-remove]");
   if (rm) { state.selected.delete(rm.dataset.remove); return pickerChanged(); }
   if (e.target.closest("#picker-clear")) { state.selected.clear(); return pickerChanged(); }
@@ -1008,6 +1058,7 @@ main.addEventListener("input", (e) => {
 main.addEventListener("change", (e) => {
   const t = e.target;
   if (t.id === "vf") { state.filter.voice = t.value; renderRows(); }
+  else if (t.id === "tf") { state.filter.type = t.value; renderRows(); }
   else if (t.name && t.name.startsWith("crit-")) updateTotals();
   else if (t.dataset.tr) {
     if (t.checked) state.selected.add(t.dataset.tr);
