@@ -671,7 +671,7 @@ function renderForm(existing = null) {
             <option value="">No section</option>
             ${Object.entries(VOICE_OPTIONS).map(([k, label]) => `<option value="${k}">${label}</option>`).join("")}
           </select>
-          <span class="hint">Pick a section to grade the whole group.</span>
+          <span class="hint">Grade the whole section.</span>
         </label>
         ${
           existing
@@ -696,7 +696,7 @@ function renderForm(existing = null) {
               </div>
             </div>
           </div>
-          <span class="hint">Pick one or more trainees to grade them on the same sheet.</span>
+          <span class="hint">Pick one or more trainees.</span>
         </div>`
         }
         <label class="field"><span>Program and year level (optional)</span><input id="s-program" type="text"></label>
