@@ -41,6 +41,7 @@ const modalRoot = $("#modal-root");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const voiceName = (v) => VOICE[v] || "Not set";
 const isGroup = (a) => !a.traineeUid;
+const adjLabel = (a) => a.adjudicator || `${a.graderName} (${ROLE[a.graderRole] || ""})`;
 const sheetTitle = (a) => a.traineeName || (a.voicePart === "G" ? "Generalized (whole choir)" : `${voiceName(a.voicePart)} section`);
 const ms = (t) => (t && t.toMillis ? t.toMillis() : Date.now());
 const byNewest = (a, b) => (b.date || "").localeCompare(a.date || "") || ms(b.createdAt) - ms(a.createdAt);
@@ -331,6 +332,7 @@ function enterApp(user, profile) {
     );
   }
   render();
+  animateMain();
   window.scrollTo(0, 0);
 }
 
@@ -404,7 +406,56 @@ function updateTotals() {
     const cell = main.querySelector(`[data-pts="${c.key}"]`);
     if (cell) cell.textContent = scores[c.key] ? scores[c.key].points : "–";
   });
-  $("#rubric-total").textContent = `${total}/100`;
+  const totalEl = $("#rubric-total");
+  totalEl.textContent = `${total}/100`;
+  totalEl.classList.remove("bump");
+  void totalEl.offsetWidth;
+  totalEl.classList.add("bump");
+}
+
+/* =========================================================
+   Motion
+   ========================================================= */
+const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let enterTimer;
+
+function countUp() {
+  main.querySelectorAll(".stat .num").forEach((el) => {
+    const txt = el.textContent.trim();
+    const n = parseFloat(txt);
+    if (Number.isNaN(n)) return;
+    const dec = txt.includes(".") ? 1 : 0;
+    const start = performance.now();
+    const tick = (t) => {
+      const k = Math.min(1, (t - start) / 850);
+      el.textContent = (n * (1 - Math.pow(1 - k, 3))).toFixed(dec);
+      if (k < 1) requestAnimationFrame(tick);
+      else el.textContent = txt;
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+// Plays the "page enter" animation. Called when the view changes, not on every live data update.
+function animateMain() {
+  if (reduceMotion) return;
+  main.classList.remove("enter");
+  [...main.children].forEach((el, i) => el.style.setProperty("--i", i));
+  main.querySelectorAll(".stat, .card-a").forEach((el, i) => el.style.setProperty("--j", i));
+  main.querySelectorAll("#rows tr").forEach((el, i) => el.style.setProperty("--r", Math.min(i, 12)));
+  void main.offsetWidth;
+  main.classList.add("enter");
+  clearTimeout(enterTimer);
+  enterTimer = setTimeout(() => main.classList.remove("enter"), 1900);
+  countUp();
+}
+
+function showDashboard() {
+  state.view = "dashboard";
+  state.editing = null;
+  render();
+  animateMain();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 /* =========================================================
@@ -472,7 +523,7 @@ function renderRows() {
       <td><span class="tag">${esc(voiceName(a.voicePart))}</span></td>
       <td>${esc(fmtDate(a.date))}</td>
       <td><span class="score-pill">${a.total}<small>/100</small></span></td>
-      <td>${esc(a.graderName)}<div class="hint">${esc(ROLE[a.graderRole] || "")}</div></td>
+      <td>${esc(a.adjudicator || a.graderName)}<div class="hint">${a.adjudicator ? `Recorded by ${esc(a.graderName)}` : esc(ROLE[a.graderRole] || "")}</div></td>
     </tr>`).join("");
 }
 
@@ -499,7 +550,7 @@ function renderTraineeDashboard() {
           <button class="card-a" type="button" data-id="${a.id}">
             <div class="big">${a.total}<small>/100</small></div>
             <div><strong>${esc(fmtDate(a.date))}</strong></div>
-            <div class="meta">${isGroup(a) ? `Group: ${esc(sheetTitle(a))}` : esc(voiceName(a.voicePart))}<br>Rated by ${esc(a.graderName)} (${esc(ROLE[a.graderRole] || "")})</div>
+            <div class="meta">${isGroup(a) ? `Group: ${esc(sheetTitle(a))}` : esc(voiceName(a.voicePart))}<br>Rated by ${esc(adjLabel(a))}</div>
           </button>`).join("")}</div>`
         : `<div class="panel"><div class="empty"><p>No rating sheets yet.</p><p class="hint">When a Master of Initiation or Senior Member rates you or your section, it will show up here.</p></div></div>`
     }`;
@@ -544,7 +595,7 @@ function renderForm(existing = null) {
       </div>
       ${rubricHTML({ scores: existing ? existing.scores : {}, mode: "edit" })}
       <label class="field"><span>Comment</span><textarea id="s-comment" maxlength="2000" placeholder="Strengths, what to work on, next steps"></textarea></label>
-      <label class="field"><span>Adjudicator</span><input id="s-adj" type="text" readonly value="${esc(p.name)} (${esc(ROLE[p.role])})"></label>
+      <label class="field"><span>Adjudicator</span><input id="s-adj" type="text" maxlength="120" value="${esc(existing ? adjLabel(existing) : `${p.name} (${ROLE[p.role]})`)}"></label>
       <div id="form-error" class="form-error" role="alert" hidden></div>
       <div class="actions">
         <button class="btn" id="cancel2" type="button">Cancel</button>
@@ -558,6 +609,7 @@ function renderForm(existing = null) {
     $("#s-program").value = existing.program || "";
     $("#s-comment").value = existing.comment || "";
   }
+  animateMain();
   window.scrollTo(0, 0);
 }
 
@@ -588,6 +640,7 @@ async function saveSheet() {
     scores,
     total,
     comment: $("#s-comment").value.trim(),
+    adjudicator: $("#s-adj").value.trim() || `${state.profile.name} (${ROLE[state.profile.role]})`,
     graderUid: state.user.uid,
     graderName: state.profile.name,
     graderRole: state.profile.role,
@@ -598,9 +651,7 @@ async function saveSheet() {
   try {
     if (ex) await updateDoc(doc(db, "assessments", ex.id), data);
     else await addDoc(collection(db, "assessments"), { ...data, createdAt: serverTimestamp() });
-    state.view = "dashboard";
-    state.editing = null;
-    render();
+    showDashboard();
     toast("Rating sheet saved");
   } catch (err) {
     console.error(err);
@@ -643,7 +694,7 @@ function openDetail(id) {
         <div>
           <div class="section-title">Adjudicator's comment</div>
           ${a.comment ? `<p class="quote">${esc(a.comment)}</p>` : '<p class="hint">No comment was left on this sheet.</p>'}
-          <p class="hint" style="margin-top:.5rem">${esc(a.graderName)}, ${esc(ROLE[a.graderRole] || "")}</p>
+          <p class="hint" style="margin-top:.5rem">Adjudicator: ${esc(adjLabel(a))}</p>
         </div>
 
         <div>
@@ -765,7 +816,7 @@ function openDetail(id) {
    ========================================================= */
 main.addEventListener("click", (e) => {
   if (e.target.closest("#new-sheet")) return renderForm();
-  if (e.target.closest("#cancel-form, #cancel2")) { state.view = "dashboard"; state.editing = null; return render(); }
+  if (e.target.closest("#cancel-form, #cancel2")) return showDashboard();
   const row = e.target.closest("[data-id]");
   if (row) openDetail(row.dataset.id);
 });
