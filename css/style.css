@@ -353,6 +353,49 @@ table.list tbody tr { transition: background 0.2s; }
 .toast { animation: toastin 0.3s ease both; }
 .msg { animation: rise 0.35s ease both; }
 
+/* ---------- Multi-select trainee picker ---------- */
+.picker { position: relative; }
+.picker-wrap { position: relative; }
+.picker-box {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 46px;
+  background: var(--ox-950); border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.7rem; cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.picker-box:hover { border-color: var(--gold-300); }
+.picker-box:focus-visible, .picker-box[aria-expanded="true"] { border-color: var(--gold-300); outline: none; box-shadow: 0 0 0 3px rgba(238, 197, 82, 0.25); }
+.picker-box.static { cursor: default; }
+.picker-box.static:hover { border-color: var(--line); }
+.picker-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; min-width: 0; }
+.picker-placeholder { color: rgba(251, 241, 199, 0.6); padding: 0.2rem 0; }
+.picker-caret { color: var(--gold-300); transition: transform 0.3s var(--ease); }
+.picker-box[aria-expanded="true"] .picker-caret { transform: rotate(180deg); }
+.pchip {
+  display: inline-flex; align-items: center; gap: 0.35rem; background: var(--gold-300); color: var(--ox-950);
+  font-weight: 700; font-size: 0.85rem; border-radius: 999px; padding: 0.15rem 0.35rem 0.15rem 0.7rem;
+  animation: pop 0.25s var(--ease) both;
+}
+.picker-box.static .pchip { padding-right: 0.7rem; }
+.pchip-x {
+  font: inherit; font-weight: 800; line-height: 1; cursor: pointer; border: 0; border-radius: 50%;
+  width: 1.3rem; height: 1.3rem; color: var(--ox-950); background: rgba(36, 0, 0, 0.15);
+}
+.pchip-x:hover { background: rgba(36, 0, 0, 0.35); }
+.picker-panel {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30;
+  background: var(--ox-900); border: 1px solid var(--gold-500); border-radius: 10px; padding: 0.6rem;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55); display: grid; gap: 0.5rem;
+  animation: rise 0.28s var(--ease) both;
+}
+.picker-list { max-height: 240px; overflow-y: auto; display: grid; gap: 2px; }
+.pick { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; border-radius: 8px; cursor: pointer; }
+.pick:hover { background: rgba(238, 197, 82, 0.12); }
+.pick input { width: 1.1rem; height: 1.1rem; accent-color: var(--gold-300); flex: none; padding: 0; border: 0; background: transparent; }
+.pick span { flex: 1; min-width: 0; }
+.pick small { color: var(--muted); }
+.picker-actions { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.9rem; }
+.pad { padding: 0.6rem; }
+@media (min-width: 900px) { .sheet-head .picker { grid-column: span 2; } }
+
 /* ---------- Smooth switching ---------- */
 .auth-card { will-change: height; }
 .auth-card > * { transition: opacity 0.3s var(--ease), transform 0.4s var(--ease); }
