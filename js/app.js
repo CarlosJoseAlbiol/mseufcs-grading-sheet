@@ -21,12 +21,19 @@ const CRITERIA = [
   { key: "stage",         label: "Stage Presence",    subs: ["Confidence", "Expression"],                 points: [10, 8, 6, 4, 2] },
   { key: "lyrics",        label: "Mastery of Lyrics", subs: ["No error or lapses in memory"],             points: [10, 8, 6, 4, 2] }
 ];
+// S / A / T / B cover a whole section (both 1 and 2). S1, S2, ... cover one sub-section.
 const VOICE_OPTIONS = {
-  S1: "Soprano 1", S2: "Soprano 2", A1: "Alto 1", A2: "Alto 2",
-  T1: "Tenor 1", T2: "Tenor 2", B1: "Bass 1", B2: "Bass 2", G: "Generalized"
+  S: "Soprano", S1: "Soprano 1", S2: "Soprano 2",
+  A: "Alto", A1: "Alto 1", A2: "Alto 2",
+  T: "Tenor", T1: "Tenor 1", T2: "Tenor 2",
+  B: "Bass", B1: "Bass 1", B2: "Bass 2",
+  G: "Generalized"
 };
-// Older accounts may still carry a single-letter voice part.
-const VOICE = { ...VOICE_OPTIONS, S: "Soprano", A: "Alto", T: "Tenor", B: "Bass" };
+const VOICE = VOICE_OPTIONS;
+const isWholeSection = (k) => k.length === 1 && k !== "G";
+const optionLabel = (k) => (isWholeSection(k) ? `${VOICE_OPTIONS[k]} (all)` : VOICE_OPTIONS[k]);
+// Is a trainee with voice part `tv` part of the section `sec`? "S" includes S, S1 and S2.
+const inSection = (tv, sec) => tv === sec || (isWholeSection(sec) && (tv || "").startsWith(sec));
 const ROLE = { trainee: "Trainee", master: "Master of Initiation", senior: "Senior Member" };
 const REACTIONS = ["Noted", "Thank you", "Will improve", "Motivated"];
 const isGrader = (r) => r === "master" || r === "senior";
@@ -403,7 +410,11 @@ function enterApp(user, profile) {
     state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", user.uid)), (snap) => { sources.mine = mapDocs(snap); publish(sources); }, listenErr));
     state.unsubs.push(onSnapshot(query(col, where("traineeUids", "array-contains", user.uid)), (snap) => { sources.multi = mapDocs(snap); publish(sources); }, listenErr));
     if (profile.voicePart) {
-      state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", ""), where("voicePart", "==", profile.voicePart)), (snap) => { sources.section = mapDocs(snap); publish(sources); }, listenErr));
+      const keys = new Set([profile.voicePart]);
+      if (/^[SATB][12]$/.test(profile.voicePart)) keys.add(profile.voicePart[0]);
+      keys.forEach((key) => {
+        state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", ""), where("voicePart", "==", key)), (snap) => { sources["section-" + key] = mapDocs(snap); publish(sources); }, listenErr));
+      });
     }
     state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", ""), where("voicePart", "==", "G")), (snap) => { sources.choir = mapDocs(snap); publish(sources); }, listenErr));
   }
@@ -588,7 +599,7 @@ function renderGraderDashboard() {
       <input id="q" type="search" placeholder="Search by trainee or section" aria-label="Search by trainee or section" value="${esc(state.filter.q)}">
       <select id="vf" aria-label="Filter by voice part">
         <option value="">All voice parts</option>
-        ${Object.entries(VOICE_OPTIONS).map(([k, label]) => `<option value="${k}" ${state.filter.voice === k ? "selected" : ""}>${label}</option>`).join("")}
+        ${Object.keys(VOICE_OPTIONS).map((k) => `<option value="${k}" ${state.filter.voice === k ? "selected" : ""}>${optionLabel(k)}</option>`).join("")}
       </select>
       <select id="tf" aria-label="Filter by sheet type">
         <option value="">All sheets</option>
@@ -689,7 +700,7 @@ function renderForm(existing = null) {
           <span>Section / group</span>
           <select id="s-section">
             <option value="">No section</option>
-            ${Object.entries(VOICE_OPTIONS).map(([k, label]) => `<option value="${k}">${label}</option>`).join("")}
+            ${Object.keys(VOICE_OPTIONS).map((k) => `<option value="${k}">${optionLabel(k)}</option>`).join("")}
           </select>
           <span class="hint">Grade the whole section.</span>
         </label>
@@ -776,7 +787,7 @@ function paintPicker() {
   const sec = $("#s-section").value;
   const secBtn = $("#picker-section");
   secBtn.hidden = !sec || sec === "G";
-  if (!secBtn.hidden) secBtn.textContent = `Select all in ${VOICE_OPTIONS[sec]}`;
+  if (!secBtn.hidden) secBtn.textContent = `Select all in ${optionLabel(sec)}`;
 }
 
 function togglePicker(open) {
@@ -1035,7 +1046,7 @@ main.addEventListener("click", (e) => {
   if (e.target.closest("#picker-clear")) { state.selected.clear(); return pickerChanged(); }
   if (e.target.closest("#picker-section")) {
     const sec = $("#s-section").value;
-    state.trainees.filter((t) => t.voicePart === sec).forEach((t) => state.selected.add(t.id));
+    state.trainees.filter((t) => inSection(t.voicePart, sec)).forEach((t) => state.selected.add(t.id));
     return pickerChanged();
   }
   if (e.target.closest("#picker-box")) return togglePicker();
