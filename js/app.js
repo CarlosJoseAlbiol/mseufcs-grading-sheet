@@ -405,18 +405,12 @@ function enterApp(user, profile) {
   if (grader) {
     state.unsubs.push(onSnapshot(col, (snap) => publish({ all: mapDocs(snap) }), listenErr));
   } else {
-    // Trainees see: their own sheets, sheets for their section, and whole-choir sheets.
-    const sources = { mine: [], multi: [], section: [], choir: [] };
+    // Trainees see: their own sheets, sheets naming them specifically, and every
+    // group/section sheet (traineeUid == ""), whichever voice part it was made for.
+    const sources = { mine: [], multi: [], groups: [] };
     state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", user.uid)), (snap) => { sources.mine = mapDocs(snap); publish(sources); }, listenErr));
     state.unsubs.push(onSnapshot(query(col, where("traineeUids", "array-contains", user.uid)), (snap) => { sources.multi = mapDocs(snap); publish(sources); }, listenErr));
-    if (profile.voicePart) {
-      const keys = new Set([profile.voicePart]);
-      if (/^[SATB][12]$/.test(profile.voicePart)) keys.add(profile.voicePart[0]);
-      keys.forEach((key) => {
-        state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", ""), where("voicePart", "==", key)), (snap) => { sources["section-" + key] = mapDocs(snap); publish(sources); }, listenErr));
-      });
-    }
-    state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", ""), where("voicePart", "==", "G")), (snap) => { sources.choir = mapDocs(snap); publish(sources); }, listenErr));
+    state.unsubs.push(onSnapshot(query(col, where("traineeUid", "==", "")), (snap) => { sources.groups = mapDocs(snap); publish(sources); }, listenErr));
   }
   if (grader) {
     state.unsubs.push(
