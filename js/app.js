@@ -168,6 +168,8 @@ function restoreDraft(existing) {
   });
   updateTotals();
   applyMode(draft.mode || "graded", true);
+  const discard = $("#discard-draft");
+  if (discard) discard.hidden = false;
   toast("Restored your unsaved draft");
 }
 
@@ -753,6 +755,7 @@ function renderForm(existing = null) {
           <button type="button" data-sheetmode="comments" aria-pressed="false">Comments only</button>
         </div>
         <p class="hint" id="mode-hint" style="margin-top:.5rem"></p>
+        <button class="btn-link" id="discard-draft" type="button" hidden>Discard draft and start fresh</button>
       </div>
       <div class="sheet-head">
         <label class="field">
@@ -1112,9 +1115,17 @@ main.addEventListener("click", (e) => {
   }
   if (e.target.closest("#picker-box")) return togglePicker();
   if (e.target.closest("#new-sheet")) return goto(() => renderForm());
-  if (e.target.closest("#cancel-form, #cancel2")) { clearDraft(state.editing); return goto(showDashboard); }
+  if (e.target.closest("#cancel-form, #cancel2")) return goto(showDashboard);
+  if (e.target.closest("#discard-draft")) {
+    if (confirm("Discard this unsaved draft? This cannot be undone.")) {
+      clearDraft(state.editing);
+      goto(() => renderForm(state.editing));
+    }
+    return;
+  }
   const row = e.target.closest("[data-id]");
   if (row) openDetail(row.dataset.id);
+  if (state.view === "form") scheduleDraftSave();
 });
 main.addEventListener("keydown", (e) => {
   if (e.target.id === "picker-box" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); return togglePicker(); }
