@@ -106,6 +106,71 @@ function morph(el, change) {
   setTimeout(done, 650);
 }
 
+const DRAFT_PREFIX = "mseufcs-draft-";
+const draftKey = (existing) => DRAFT_PREFIX + (existing ? `edit-${existing.id}` : "new");
+
+function collectDraft() {
+  const scores = {};
+  CRITERIA.forEach((c) => {
+    const picked = main.querySelector(`input[name="crit-${c.key}"]:checked`);
+    if (picked) scores[c.key] = Number(picked.value);
+  });
+  return {
+    t: Date.now(),
+    mode: state.mode,
+    section: $("#s-section") ? $("#s-section").value : "",
+    traineeIds: [...state.selected],
+    program: $("#s-program") ? $("#s-program").value : "",
+    date: $("#s-date") ? $("#s-date").value : "",
+    adjudicator: $("#s-adj") ? $("#s-adj").value : "",
+    comment: $("#s-comment") ? $("#s-comment").value : "",
+    scores
+  };
+}
+
+let draftSaveTimer;
+function scheduleDraftSave() {
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(saveDraftNow, 250);
+}
+function saveDraftNow() {
+  if (state.view !== "form" || !$("#sheet")) return;
+  try { localStorage.setItem(draftKey(state.editing), JSON.stringify(collectDraft())); } catch (_) { /* storage unavailable */ }
+}
+function loadDraft(existing) {
+  try {
+    const raw = localStorage.getItem(draftKey(existing));
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+function clearDraft(existing) {
+  try { localStorage.removeItem(draftKey(existing)); } catch (_) { /* ignore */ }
+}
+
+// iOS and other mobile browsers can discard an inactive tab without warning, so save
+// on every tab switch or app-switch, not just on a timer.
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveDraftNow(); });
+window.addEventListener("pagehide", saveDraftNow);
+
+function restoreDraft(existing) {
+  const draft = loadDraft(existing);
+  if (!draft) return;
+  if (draft.section) $("#s-section").value = draft.section;
+  state.selected = new Set(draft.traineeIds || []);
+  paintPicker();
+  if (draft.program) $("#s-program").value = draft.program;
+  if (draft.date) $("#s-date").value = draft.date;
+  if (draft.adjudicator) $("#s-adj").value = draft.adjudicator;
+  if (draft.comment) $("#s-comment").value = draft.comment;
+  Object.entries(draft.scores || {}).forEach(([key, level]) => {
+    const input = main.querySelector(`input[name="crit-${key}"][value="${level}"]`);
+    if (input) input.checked = true;
+  });
+  updateTotals();
+  applyMode(draft.mode || "graded", true);
+  toast("Restored your unsaved draft");
+}
+
 let toastTimer;
 function toast(msg) {
   const t = $("#toast");
@@ -728,7 +793,7 @@ function renderForm(existing = null) {
         <label class="field"><span>Date</span><input id="s-date" type="date"></label>
       </div>
       <div class="collapse" id="rubric-block"><div class="collapse-inner">${rubricHTML({ scores: existing ? existing.scores || {} : {}, mode: "edit" })}</div></div>
-      <label class="field"><span id="comment-label">Comment</span><textarea id="s-comment" maxlength="2000" placeholder="Strengths, what to work on, next steps"></textarea></label>
+      <label class="field"><span id="comment-label">Comment</span><textarea id="s-comment" placeholder="Strengths, what to work on, next steps"></textarea></label>
       <label class="field"><span>Adjudicator</span><input id="s-adj" type="text" maxlength="120" value="${esc(existing ? adjLabel(existing) : `${p.name} (${ROLE[p.role]})`)}"></label>
       <div id="form-error" class="form-error" role="alert" hidden></div>
       <div class="actions">
@@ -744,6 +809,7 @@ function renderForm(existing = null) {
   }
   paintPicker();
   applyMode(existing ? existing.type || "graded" : "graded", true);
+  restoreDraft(existing);
   animateMain();
   window.scrollTo(0, 0);
 }
@@ -865,6 +931,7 @@ async function saveSheet() {
   try {
     if (ex) await updateDoc(doc(db, "assessments", ex.id), data);
     else await addDoc(collection(db, "assessments"), { ...data, ...who, createdAt: serverTimestamp() });
+    clearDraft(ex);
     goto(showDashboard);
     toast("Rating sheet saved");
   } catch (err) {
@@ -924,7 +991,7 @@ function openDetail(id) {
           <div class="section-title">Replies</div>
           <div class="thread" id="thread"><p class="hint">Loading replies…</p></div>
           <form id="cmt-form" class="compose" novalidate>
-            <textarea id="cmt-text" maxlength="1000" placeholder="Write a reply" aria-label="Write a reply"></textarea>
+            <textarea id="cmt-text" placeholder="Write a reply" aria-label="Write a reply"></textarea>
             <div class="actions"><button class="btn btn-primary btn-sm" type="submit">Post reply</button></div>
           </form>
         </div>
@@ -1045,7 +1112,7 @@ main.addEventListener("click", (e) => {
   }
   if (e.target.closest("#picker-box")) return togglePicker();
   if (e.target.closest("#new-sheet")) return goto(() => renderForm());
-  if (e.target.closest("#cancel-form, #cancel2")) return goto(showDashboard);
+  if (e.target.closest("#cancel-form, #cancel2")) { clearDraft(state.editing); return goto(showDashboard); }
   const row = e.target.closest("[data-id]");
   if (row) openDetail(row.dataset.id);
 });
@@ -1059,6 +1126,7 @@ main.addEventListener("keydown", (e) => {
 main.addEventListener("input", (e) => {
   if (e.target.id === "picker-search") return paintPicker();
   if (e.target.id === "q") { state.filter.q = e.target.value.trim(); renderRows(); }
+  if (state.view === "form") scheduleDraftSave();
 });
 main.addEventListener("change", (e) => {
   const t = e.target;
@@ -1070,6 +1138,7 @@ main.addEventListener("change", (e) => {
     else state.selected.delete(t.dataset.tr);
     pickerChanged();
   } else if (t.id === "s-section") paintPicker();
+  if (state.view === "form") scheduleDraftSave();
 });
 main.addEventListener("submit", (e) => {
   if (e.target.id === "sheet") { e.preventDefault(); saveSheet(); }
